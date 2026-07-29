@@ -1,0 +1,132 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net (Pillar 8 & Rule 1)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- REUSABLE PRIMITIVES ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Admin authorization check (Pillar 4 / Phase 3)
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Document ID validation to prevent ID Poisoning (Pillar 3)
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- ENTITY VALIDATION HELPERS (Pillar 2) ---
+
+    // Validates public user profiles
+    function isValidUserPublicProfile(data) {
+      return data.keys().hasAll(['uid', 'username', 'selectedLanguage', 'xp', 'level', 'badges', 'dailyStreak', 'lastActiveDate', 'completedLessons', 'createdAt'])
+        && data.keys().size() >= 10 && data.keys().size() <= 15
+        && data.uid is string && data.uid.size() <= 128
+        && data.username is string && data.username.size() >= 1 && data.username.size() <= 100
+        && data.selectedLanguage is string && data.selectedLanguage.size() <= 50
+        && data.xp is number && data.xp >= 0
+        && data.level is number && data.level >= 1
+        && data.badges is list && data.badges.size() <= 100
+        && data.dailyStreak is number && data.dailyStreak >= 0
+        && data.lastActiveDate is string
+        && data.completedLessons is list && data.completedLessons.size() <= 2000
+        && data.createdAt is string;
+    }
+
+    // Validates private user profile info
+    function isValidUserPrivateInfo(data) {
+      return data.keys().hasAll(['email', 'isAdmin'])
+        && data.keys().size() == 2
+        && data.email is string && data.email.size() <= 256
+        && data.isAdmin is bool;
+    }
+
+    // Validates lessons
+    function isValidLesson(data) {
+      return data.keys().hasAll(['id', 'language', 'category', 'title', 'description', 'content', 'quiz', 'difficulty', 'createdAt'])
+        && data.keys().size() == 9
+        && data.id is string && data.id.size() <= 100
+        && data.language is string && data.language.size() <= 20
+        && data.category is string && data.category.size() <= 50
+        && data.title is string && data.title.size() <= 150
+        && data.description is string && data.description.size() <= 1000
+        && data.content is list && data.content.size() <= 100
+        && data.quiz is list && data.quiz.size() <= 50
+        && data.difficulty is string && data.difficulty.size() <= 20
+        && data.createdAt is string;
+    }
+
+    // --- COLLECTIONS RULES ---
+
+    // Admins Collection - manually provisioned, readable by signed-in users, no writes
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // Users Collection (Pillar 6 - PII Isolation / Public profiles)
+    match /users/{userId} {
+      allow read: if isSignedIn(); // Permitted so users can view leaderboards
+      
+      allow create: if isOwner(userId) 
+                    && isValidId(userId)
+                    && isValidUserPublicProfile(incoming());
+                    
+      allow update: if isOwner(userId) 
+                    && isValidId(userId)
+                    && isValidUserPublicProfile(incoming());
+                    
+      allow delete: if isOwner(userId);
+
+      // Private User Info subcollection (PII Isolation - Pillar 6)
+      match /private/info {
+        allow read: if isOwner(userId);
+        
+        // Prevent normal users from elevating themselves to admin (Pillar 4 / Prevent Self-Assigned Roles)
+        allow create: if isOwner(userId)
+                      && isValidUserPrivateInfo(incoming())
+                      && incoming().isAdmin == false; // Forbid setting isAdmin=true during registration
+                      
+        allow update: if isOwner(userId)
+                      && isValidUserPrivateInfo(incoming())
+                      && (incoming().isAdmin == existing().isAdmin || (existing().isAdmin == false && incoming().isAdmin == false)); // Block self escalation
+                      
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // Lessons Collection - Admin can manage, users can only read (Pillar 1/2)
+    match /lessons/{lessonId} {
+      allow read: if isSignedIn();
+      
+      allow create: if isAdmin() 
+                    && isValidId(lessonId) 
+                    && isValidLesson(incoming());
+                    
+      allow update: if isAdmin() 
+                    && isValidId(lessonId) 
+                    && isValidLesson(incoming());
+                    
+      allow delete: if isAdmin();
+    }
+  }
+}

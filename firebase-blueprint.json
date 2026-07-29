@@ -1,0 +1,126 @@
+{
+  "entities": {
+    "UserPublicProfile": {
+      "title": "UserPublicProfile",
+      "description": "Public profile of a user, used for leaderboard and general statistics.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The user's unique authentication identifier."
+        },
+        "username": {
+          "type": "string",
+          "description": "The user's display name."
+        },
+        "selectedLanguage": {
+          "type": "string",
+          "description": "The currently active language being learned (e.g., marathi, hindi, english)."
+        },
+        "xp": {
+          "type": "number",
+          "description": "Total experience points earned."
+        },
+        "level": {
+          "type": "number",
+          "description": "User's calculated level based on XP."
+        },
+        "badges": {
+          "type": "array",
+          "description": "List of badge IDs earned by the user."
+        },
+        "dailyStreak": {
+          "type": "number",
+          "description": "Consecutive days of active learning."
+        },
+        "lastActiveDate": {
+          "type": "string",
+          "description": "ISO timestamp of the user's last action."
+        },
+        "completedLessons": {
+          "type": "array",
+          "description": "Array of completed lesson document IDs."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp when the account was created."
+        }
+      },
+      "required": ["uid", "username", "selectedLanguage", "xp", "level", "badges", "dailyStreak", "lastActiveDate", "completedLessons", "createdAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Sensitive personal information stored separately to maintain PII separation.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "description": "The user's email address."
+        },
+        "isAdmin": {
+          "type": "boolean",
+          "description": "Whether the user has administrative privileges."
+        }
+      },
+      "required": ["email", "isAdmin"]
+    },
+    "Lesson": {
+      "title": "Lesson",
+      "description": "An educational lesson including teaching material and quiz questions.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the lesson."
+        },
+        "language": {
+          "type": "string",
+          "description": "Language code (e.g. marathi, hindi, english)."
+        },
+        "category": {
+          "type": "string",
+          "description": "Lesson category (alphabets, vocabulary, grammar)."
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the lesson."
+        },
+        "description": {
+          "type": "string",
+          "description": "Brief summary of what the lesson covers."
+        },
+        "content": {
+          "type": "array",
+          "description": "Array of cards or elements for teaching (native word, translation, pronunciation, explanation)."
+        },
+        "quiz": {
+          "type": "array",
+          "description": "Array of quiz questions associated with this lesson."
+        },
+        "difficulty": {
+          "type": "string",
+          "description": "Difficulty level: beginner, intermediate, advanced."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp when the lesson was created."
+        }
+      },
+      "required": ["id", "language", "category", "title", "description", "content", "quiz", "difficulty", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "UserPublicProfile",
+      "description": "Collection of public user profile statistics."
+    },
+    "users/{userId}/private/info": {
+      "schema": "UserPrivateInfo",
+      "description": "Subcollection isolating PII and admin flags."
+    },
+    "lessons/{lessonId}": {
+      "schema": "Lesson",
+      "description": "Collection of learning lessons curated by admins and available to users."
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "LingoLocal Pro | Multilingual AI Language & Culture Academy",
+  "description": "Enterprise-grade Indian regional language learning platform featuring AI conversation tutors, interactive pronunciation engines, gamified XP leaderboards, and administrative curriculum controls.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
