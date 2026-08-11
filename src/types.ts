@@ -1,6 +1,7 @@
 export interface UserProfile {
   uid: string;
   username: string;
+  email?: string; // Optional user email address
   selectedLanguage: string; // 'marathi' | 'hindi' | 'english'
   xp: number;
   level: number;
@@ -9,6 +10,27 @@ export interface UserProfile {
   lastActiveDate: string; // ISO string
   completedLessons: string[]; // array of lesson document IDs
   createdAt: string; // ISO string
+}
+
+export interface SiteVisitorLog {
+  id: string; // unique session / visitor ID
+  userId?: string;
+  userEmail?: string;
+  username?: string;
+  deviceType: string;
+  browser: string;
+  firstVisitedAt: string;
+  lastVisitedAt: string;
+  visitCount: number;
+  isRegisteredUser?: boolean;
+}
+
+export interface VisitorAnalyticsSummary {
+  totalVisits: number;
+  uniqueVisitors: number;
+  registeredUsersCount: number;
+  guestVisitorsCount: number;
+  activeTodayCount: number;
 }
 
 export interface UserPrivateInfo {

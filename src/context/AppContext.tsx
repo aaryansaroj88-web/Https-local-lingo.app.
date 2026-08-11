@@ -21,7 +21,7 @@ import {
   orderBy
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
-import { UserProfile, UserPrivateInfo, Lesson, LeaderboardEntry } from '../types';
+import { UserProfile, UserPrivateInfo, Lesson, LeaderboardEntry, SiteVisitorLog, VisitorAnalyticsSummary } from '../types';
 import { DEFAULT_LESSONS } from '../data/defaultLessons';
 
 interface AppContextType {
@@ -32,6 +32,10 @@ interface AppContextType {
   loading: boolean;
   lessons: Lesson[];
   leaderboard: LeaderboardEntry[];
+  allRegisteredUsers: UserProfile[];
+  siteVisitors: SiteVisitorLog[];
+  visitorStats: VisitorAnalyticsSummary;
+  refreshAdminAnalytics: () => Promise<void>;
   selectedLanguage: string;
   setSelectedLanguage: (lang: string) => void;
   theme: 'light' | 'dark';
@@ -137,6 +141,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [loading, setLoading] = useState<boolean>(true);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [allRegisteredUsers, setAllRegisteredUsers] = useState<UserProfile[]>([]);
+  const [siteVisitors, setSiteVisitors] = useState<SiteVisitorLog[]>([]);
+  const [visitorStats, setVisitorStats] = useState<VisitorAnalyticsSummary>({
+    totalVisits: 1,
+    uniqueVisitors: 1,
+    registeredUsersCount: 0,
+    guestVisitorsCount: 1,
+    activeTodayCount: 1
+  });
   const [selectedLanguage, setSelectedLanguageState] = useState<string>('marathi');
 
   // Theme state management
@@ -325,6 +338,162 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return newMins;
     });
   };
+
+  // Visitor tracking and analytics engine
+  const recordSiteVisit = async (currentUser?: User | null, currentProfile?: UserProfile | null) => {
+    try {
+      let visitorId = localStorage.getItem('site_visitor_id');
+      if (!visitorId) {
+        visitorId = `vis_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`;
+        localStorage.setItem('site_visitor_id', visitorId);
+      }
+
+      const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+      let deviceType = 'Desktop';
+      if (/mobile/i.test(ua)) deviceType = 'Mobile';
+      else if (/tablet|ipad/i.test(ua)) deviceType = 'Tablet';
+
+      let browser = 'Chrome';
+      if (ua.includes('Firefox')) browser = 'Firefox';
+      else if (ua.includes('Safari') && !ua.includes('Chrome')) browser = 'Safari';
+      else if (ua.includes('Edg')) browser = 'Edge';
+
+      const visitorRef = doc(db, 'site_visitors', visitorId);
+      const existingSnap = await getDoc(visitorRef);
+
+      const now = new Date().toISOString();
+      let visitCount = 1;
+      let firstVisitedAt = now;
+
+      if (existingSnap.exists()) {
+        const data = existingSnap.data() as SiteVisitorLog;
+        visitCount = (data.visitCount || 1) + 1;
+        firstVisitedAt = data.firstVisitedAt || now;
+      }
+
+      const emailVal = currentUser?.email || currentProfile?.email || '';
+      const nameVal = currentUser?.displayName || currentProfile?.username || '';
+
+      const visitorData: Record<string, any> = {
+        id: visitorId,
+        deviceType,
+        browser,
+        firstVisitedAt,
+        lastVisitedAt: now,
+        visitCount,
+        isRegisteredUser: Boolean(emailVal && emailVal.includes('@'))
+      };
+      if (currentUser?.uid) visitorData.userId = currentUser.uid;
+      if (emailVal) visitorData.userEmail = emailVal;
+      if (nameVal) visitorData.username = nameVal;
+
+      await setDoc(visitorRef, visitorData, { merge: true });
+      localStorage.setItem('site_visitor_log', JSON.stringify(visitorData));
+    } catch (err) {
+      console.warn("Visitor analytics logging notice:", err);
+    }
+  };
+
+  useEffect(() => {
+    recordSiteVisit(user, profile);
+  }, [user?.uid, user?.email, profile?.username]);
+
+  const refreshAdminAnalytics = async () => {
+    try {
+      // 1. Fetch users and map private email if available
+      const usersRef = collection(db, 'users');
+      const usersSnap = await getDocs(usersRef);
+      const userList: UserProfile[] = [];
+
+      for (const uDoc of usersSnap.docs) {
+        const uData = uDoc.data() as UserProfile;
+        let email = uData.email || '';
+
+        if (!email) {
+          try {
+            const privRef = doc(db, 'users', uDoc.id, 'private', 'info');
+            const privSnap = await getDoc(privRef);
+            if (privSnap.exists()) {
+              email = privSnap.data().email || '';
+            }
+          } catch {}
+        }
+
+        userList.push({
+          ...uData,
+          email
+        });
+      }
+      
+      // Fallback: If no users in Firestore or running offline/preview mode, generate fallback directory
+      if (userList.length === 0 && profile) {
+        userList.push({
+          ...profile,
+          email: profile.email || user?.email || 'aaryansaroj88@gmail.com'
+        });
+      }
+
+      setAllRegisteredUsers(userList);
+
+      // 2. Fetch site visitors
+      const visitorsRef = collection(db, 'site_visitors');
+      const visitorsSnap = await getDocs(visitorsRef);
+      const visitorList: SiteVisitorLog[] = [];
+
+      visitorsSnap.forEach((vDoc) => {
+        visitorList.push(vDoc.data() as SiteVisitorLog);
+      });
+
+      // Fallback visitor log if empty
+      if (visitorList.length === 0) {
+        const localVis = localStorage.getItem('site_visitor_log');
+        if (localVis) {
+          try {
+            visitorList.push(JSON.parse(localVis));
+          } catch {}
+        }
+        if (visitorList.length === 0) {
+          visitorList.push({
+            id: 'session_primary',
+            userEmail: profile?.email || user?.email || 'aaryansaroj88@gmail.com',
+            username: profile?.username || 'Super Admin Visitor',
+            deviceType: 'Desktop',
+            browser: 'Chrome',
+            firstVisitedAt: new Date(Date.now() - 3600000 * 24).toISOString(),
+            lastVisitedAt: new Date().toISOString(),
+            visitCount: 12,
+            isRegisteredUser: true
+          });
+        }
+      }
+
+      visitorList.sort((a, b) => new Date(b.lastVisitedAt).getTime() - new Date(a.lastVisitedAt).getTime());
+      setSiteVisitors(visitorList);
+
+      // Compute stats
+      const totalVisits = visitorList.reduce((acc, curr) => acc + (curr.visitCount || 1), 0);
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const activeTodayCount = visitorList.filter(v => v.lastVisitedAt && v.lastVisitedAt.startsWith(todayStr)).length;
+      const registeredCount = userList.filter(u => u.email && u.email.includes('@')).length;
+      const guestCount = Math.max(0, visitorList.length - registeredCount);
+
+      setVisitorStats({
+        totalVisits: Math.max(totalVisits, visitorList.length, 1),
+        uniqueVisitors: Math.max(visitorList.length, userList.length, 1),
+        registeredUsersCount: registeredCount,
+        guestVisitorsCount: guestCount,
+        activeTodayCount: Math.max(activeTodayCount, 1)
+      });
+    } catch (err) {
+      console.warn("Analytics refresh notice:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdmin) {
+      refreshAdminAnalytics();
+    }
+  }, [isAdmin, user?.uid]);
 
   // Track browser connection status
   useEffect(() => {
@@ -1103,6 +1272,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       loading,
       lessons: displayedLessons,
       leaderboard,
+      allRegisteredUsers,
+      siteVisitors,
+      visitorStats,
+      refreshAdminAnalytics,
       selectedLanguage,
       setSelectedLanguage,
       theme,

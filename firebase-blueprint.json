@@ -13,6 +13,10 @@
           "type": "string",
           "description": "The user's display name."
         },
+        "email": {
+          "type": "string",
+          "description": "The user's email address if registered."
+        },
         "selectedLanguage": {
           "type": "string",
           "description": "The currently active language being learned (e.g., marathi, hindi, english)."
@@ -47,6 +51,54 @@
         }
       },
       "required": ["uid", "username", "selectedLanguage", "xp", "level", "badges", "dailyStreak", "lastActiveDate", "completedLessons", "createdAt"]
+    },
+    "SiteVisitor": {
+      "title": "SiteVisitor",
+      "description": "Log of site visitors and active user sessions for admin analytics.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique visitor or session ID."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Associated user UID if logged in."
+        },
+        "userEmail": {
+          "type": "string",
+          "description": "Associated email if logged in."
+        },
+        "username": {
+          "type": "string",
+          "description": "Associated display name."
+        },
+        "deviceType": {
+          "type": "string",
+          "description": "Mobile, Tablet, or Desktop."
+        },
+        "browser": {
+          "type": "string",
+          "description": "Browser user agent info."
+        },
+        "firstVisitedAt": {
+          "type": "string",
+          "description": "ISO timestamp when first visited."
+        },
+        "lastVisitedAt": {
+          "type": "string",
+          "description": "ISO timestamp of most recent visit."
+        },
+        "visitCount": {
+          "type": "number",
+          "description": "Total visits by this session."
+        },
+        "isRegisteredUser": {
+          "type": "boolean",
+          "description": "Whether visitor is logged in with an email account."
+        }
+      },
+      "required": ["id", "deviceType", "firstVisitedAt", "lastVisitedAt", "visitCount"]
     },
     "UserPrivateInfo": {
       "title": "UserPrivateInfo",
@@ -117,6 +169,10 @@
     "users/{userId}/private/info": {
       "schema": "UserPrivateInfo",
       "description": "Subcollection isolating PII and admin flags."
+    },
+    "site_visitors/{visitorId}": {
+      "schema": "SiteVisitor",
+      "description": "Log of site visits and traffic analytics."
     },
     "lessons/{lessonId}": {
       "schema": "Lesson",
