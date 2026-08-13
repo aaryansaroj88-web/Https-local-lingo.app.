@@ -26,7 +26,13 @@ import {
   Sparkles,
   Filter,
   Flame,
-  Award
+  Award,
+  Bell,
+  BellRing,
+  CheckCheck,
+  TrendingUp,
+  UserPlus,
+  AlertCircle
 } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
@@ -39,11 +45,19 @@ export const AdminView: React.FC = () => {
     allRegisteredUsers, 
     siteVisitors, 
     visitorStats, 
-    refreshAdminAnalytics 
+    refreshAdminAnalytics,
+    adminAlerts,
+    unreadAlertsCount,
+    markAlertAsRead,
+    markAllAlertsAsRead,
+    deleteAlert
   } = useApp();
   
-  // Navigation tab state: 'users' | 'analytics' | 'curriculum'
-  const [activeTab, setActiveTab] = useState<'users' | 'analytics' | 'curriculum'>('users');
+  // Navigation tab state: 'users' | 'analytics' | 'curriculum' | 'alerts'
+  const [activeTab, setActiveTab] = useState<'users' | 'analytics' | 'curriculum' | 'alerts'>('users');
+
+  // Alert Filter state
+  const [alertFilterType, setAlertFilterType] = useState<'all' | 'new_user' | 'dau_record' | 'system'>('all');
 
   // User search & filtering states
   const [userSearchTerm, setUserSearchTerm] = useState<string>('');
@@ -349,12 +363,66 @@ export const AdminView: React.FC = () => {
             {lessons.length}
           </span>
         </button>
+
+        <button
+          onClick={() => setActiveTab('alerts')}
+          className={`flex items-center space-x-2 px-4 py-3 text-sm font-black border-b-2 transition-all cursor-pointer whitespace-nowrap relative ${
+            activeTab === 'alerts'
+              ? 'border-red-500 text-red-600 dark:text-red-400'
+              : 'border-transparent text-gray-500 hover:text-gray-800 dark:text-slate-400 dark:hover:text-slate-200'
+          }`}
+        >
+          <div className="relative">
+            <Bell className={`h-4.5 w-4.5 ${unreadAlertsCount > 0 ? 'text-red-500 animate-bounce' : ''}`} />
+            {unreadAlertsCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+              </span>
+            )}
+          </div>
+          <span>Real-Time Admin Alerts</span>
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-extrabold ${
+            unreadAlertsCount > 0 
+              ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 animate-pulse' 
+              : 'bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-slate-400'
+          }`}>
+            {unreadAlertsCount > 0 ? `${unreadAlertsCount} New` : `${adminAlerts.length} Total`}
+          </span>
+        </button>
       </div>
 
       {statusMsg && (
         <div className="rounded-2xl bg-emerald-50 border border-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-900/50 p-4 text-emerald-800 dark:text-emerald-200 text-xs font-bold shadow-sm flex items-center space-x-2.5">
           <CheckCircle className="h-5 w-5 text-emerald-500 shrink-0" />
           <span>{statusMsg}</span>
+        </div>
+      )}
+
+      {/* Real-time Alert Toast Bar if unread alerts exist */}
+      {unreadAlertsCount > 0 && activeTab !== 'alerts' && (
+        <div className="rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white p-4 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3 animate-pulse">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-white/20 rounded-xl shrink-0">
+              <Bell className="h-5 w-5 text-white animate-bounce" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-wider text-red-100">REAL-TIME ADMIN NOTIFICATION</p>
+              <p className="text-xs font-extrabold text-white">
+                You have {unreadAlertsCount} unread administrative alert{unreadAlertsCount > 1 ? 's' : ''}! ({adminAlerts.find(a => !a.read)?.title || 'New user registration or DAU record'})
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setActiveTab('alerts')}
+            className="flex items-center space-x-2 rounded-xl bg-white text-red-700 hover:bg-red-50 px-4 py-2 text-xs font-extrabold shadow transition-all active:scale-95 cursor-pointer shrink-0"
+          >
+            <span>View Alerts Center</span>
+            <span className="rounded-full bg-red-600 text-white px-2 py-0.5 text-[10px] font-black">
+              {unreadAlertsCount} New
+            </span>
+          </button>
         </div>
       )}
 
@@ -1096,6 +1164,215 @@ export const AdminView: React.FC = () => {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: REAL-TIME ADMIN ALERTS CENTER */}
+      {activeTab === 'alerts' && (
+        <div className="space-y-6">
+          
+          {/* Header Banner for Alerts */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-3xl bg-slate-900 border border-slate-800 p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+            <div className="absolute -right-10 -bottom-10 w-56 h-56 bg-red-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10">
+              <div className="inline-flex items-center space-x-2 rounded-full bg-red-500/20 px-3.5 py-1 text-xs font-extrabold text-red-300 border border-red-500/30 mb-2.5">
+                <span className="flex h-2 w-2 rounded-full bg-red-400 animate-ping"></span>
+                <span>REAL-TIME FIREBASE ALERT STREAM CONNECTED</span>
+              </div>
+              <h3 className="text-2xl sm:text-3xl font-black text-white">Administrator Real-Time Alert Center</h3>
+              <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-xl leading-relaxed">
+                Live stream monitoring alerts triggered automatically when new users register or when daily active user (DAU) traffic records are broken.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-3 shrink-0 relative z-10">
+              {unreadAlertsCount > 0 && (
+                <button
+                  onClick={markAllAlertsAsRead}
+                  className="flex items-center space-x-2 rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-xs font-bold shadow-lg shadow-red-950/40 transition-all active:scale-95 cursor-pointer"
+                >
+                  <CheckCheck className="h-4 w-4" />
+                  <span>Mark All Read ({unreadAlertsCount})</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Filter Bar for Alerts */}
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+            <div className="flex items-center space-x-2 overflow-x-auto pb-1 sm:pb-0 max-w-full">
+              <span className="text-xs font-extrabold text-gray-400 dark:text-slate-500 uppercase tracking-wider mr-1.5 flex items-center space-x-1 shrink-0">
+                <Filter className="h-3.5 w-3.5" />
+                <span>Filter:</span>
+              </span>
+
+              <button
+                onClick={() => setAlertFilterType('all')}
+                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  alertFilterType === 'all'
+                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-slate-800 dark:text-slate-300'
+                }`}
+              >
+                All Alerts ({adminAlerts.length})
+              </button>
+
+              <button
+                onClick={() => setAlertFilterType('new_user')}
+                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  alertFilterType === 'new_user'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:text-emerald-300'
+                }`}
+              >
+                🎉 New User Registrations ({adminAlerts.filter(a => a.type === 'new_user').length})
+              </button>
+
+              <button
+                onClick={() => setAlertFilterType('dau_record')}
+                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  alertFilterType === 'dau_record'
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/60 dark:text-amber-300'
+                }`}
+              >
+                🚀 DAU Record Milestones ({adminAlerts.filter(a => a.type === 'dau_record').length})
+              </button>
+
+              <button
+                onClick={() => setAlertFilterType('system')}
+                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  alertFilterType === 'system'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-300'
+                }`}
+              >
+                🔔 System Logs ({adminAlerts.filter(a => a.type === 'system').length})
+              </button>
+            </div>
+
+            <span className="text-xs font-semibold text-gray-500 dark:text-slate-400">
+              Showing {adminAlerts.filter(a => alertFilterType === 'all' || a.type === alertFilterType).length} items
+            </span>
+          </div>
+
+          {/* Alert Feed List */}
+          <div className="space-y-3">
+            {adminAlerts.filter(a => alertFilterType === 'all' || a.type === alertFilterType).length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-12 text-center">
+                <BellRing className="mx-auto h-12 w-12 text-gray-300 dark:text-slate-700 mb-3" />
+                <h4 className="font-bold text-gray-800 dark:text-slate-200 text-base">No Alerts Match Selected Filter</h4>
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                  New alerts will appear here automatically in real-time as users register or traffic hits new record levels.
+                </p>
+              </div>
+            ) : (
+              adminAlerts
+                .filter(a => alertFilterType === 'all' || a.type === alertFilterType)
+                .map((alert) => {
+                  const isUnread = !alert.read;
+                  return (
+                    <div
+                      key={alert.id}
+                      className={`rounded-2xl border p-5 transition-all shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                        isUnread
+                          ? 'bg-red-50/50 border-red-200 dark:bg-red-950/20 dark:border-red-900/60 ring-1 ring-red-500/20'
+                          : 'bg-white border-gray-100 dark:bg-slate-900 dark:border-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-start space-x-4">
+                        <div className={`p-3 rounded-2xl shrink-0 ${
+                          alert.type === 'new_user'
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                            : alert.type === 'dau_record'
+                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                            : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+                        }`}>
+                          {alert.type === 'new_user' && <UserPlus className="h-6 w-6" />}
+                          {alert.type === 'dau_record' && <TrendingUp className="h-6 w-6" />}
+                          {alert.type === 'system' && <BellRing className="h-6 w-6" />}
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${
+                              alert.type === 'new_user'
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200'
+                                : alert.type === 'dau_record'
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200'
+                                : 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200'
+                            }`}>
+                              {alert.type === 'new_user' ? 'NEW USER REGISTRATION' : alert.type === 'dau_record' ? 'DAU TRAFFIC MILESTONE' : 'SYSTEM NOTIFICATION'}
+                            </span>
+
+                            {isUnread ? (
+                              <span className="flex items-center space-x-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-red-500 text-white animate-pulse">
+                                <span>NEW UNREAD</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-gray-400 dark:text-slate-500">
+                                Read
+                              </span>
+                            )}
+
+                            <span className="text-[11px] text-gray-400 dark:text-slate-500 flex items-center space-x-1">
+                              <Clock className="h-3 w-3 inline" />
+                              <span>{new Date(alert.createdAt).toLocaleString()}</span>
+                            </span>
+                          </div>
+
+                          <h4 className="font-extrabold text-gray-900 dark:text-slate-100 text-sm leading-snug">
+                            {alert.title}
+                          </h4>
+
+                          <p className="text-xs text-gray-600 dark:text-slate-300 leading-relaxed max-w-2xl">
+                            {alert.message}
+                          </p>
+
+                          {alert.metadata?.email && (
+                            <div className="pt-1 flex items-center space-x-2">
+                              <span className="text-[11px] font-mono text-gray-600 dark:text-slate-300 bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded">
+                                Email: {alert.metadata.email}
+                              </span>
+                              <button
+                                onClick={() => handleCopyEmail(alert.metadata!.email!)}
+                                className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center space-x-1 cursor-pointer"
+                              >
+                                {copiedEmail === alert.metadata.email ? (
+                                  <span className="text-emerald-600 flex items-center space-x-0.5"><Check className="h-3 w-3" /> Copied</span>
+                                ) : (
+                                  <span className="flex items-center space-x-0.5"><Copy className="h-3 w-3" /> Copy Email</span>
+                                )}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-2 shrink-0 self-end sm:self-center">
+                        {isUnread && (
+                          <button
+                            onClick={() => markAlertAsRead(alert.id)}
+                            className="flex items-center space-x-1 rounded-xl bg-gray-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 hover:text-emerald-600 text-gray-700 dark:text-slate-300 px-3 py-1.5 text-xs font-bold transition-all cursor-pointer"
+                          >
+                            <Check className="h-3.5 w-3.5 text-emerald-500" />
+                            <span>Mark Read</span>
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => deleteAlert(alert.id)}
+                          className="flex h-8.5 w-8.5 items-center justify-center rounded-xl bg-gray-100 dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-950/60 hover:text-red-600 text-gray-400 dark:text-slate-400 transition-all cursor-pointer"
+                          title="Delete Alert Record"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+            )}
           </div>
         </div>
       )}

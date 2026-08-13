@@ -33,6 +33,23 @@ export interface VisitorAnalyticsSummary {
   activeTodayCount: number;
 }
 
+export interface AdminAlert {
+  id: string;
+  type: 'new_user' | 'dau_record' | 'system';
+  title: string;
+  message: string;
+  createdAt: string;
+  read: boolean;
+  metadata?: {
+    email?: string;
+    username?: string;
+    uid?: string;
+    dauCount?: number;
+    previousRecord?: number;
+    date?: string;
+  };
+}
+
 export interface UserPrivateInfo {
   email: string;
   isAdmin: boolean;

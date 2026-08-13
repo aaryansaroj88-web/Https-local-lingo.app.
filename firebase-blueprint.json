@@ -159,6 +159,38 @@
         }
       },
       "required": ["id", "language", "category", "title", "description", "content", "quiz", "difficulty", "createdAt"]
+    },
+    "AdminAlert": {
+      "title": "AdminAlert",
+      "description": "Real-time alert notification for admins regarding new user registrations and DAU record milestones.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique alert identifier."
+        },
+        "type": {
+          "type": "string",
+          "description": "Alert classification: new_user, dau_record, system."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short heading for the alert notification."
+        },
+        "message": {
+          "type": "string",
+          "description": "Detailed body message of the alert."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp when alert was triggered."
+        },
+        "read": {
+          "type": "boolean",
+          "description": "Whether the alert has been acknowledged/read by an admin."
+        }
+      },
+      "required": ["id", "type", "title", "message", "createdAt", "read"]
     }
   },
   "firestore": {
@@ -177,6 +209,10 @@
     "lessons/{lessonId}": {
       "schema": "Lesson",
       "description": "Collection of learning lessons curated by admins and available to users."
+    },
+    "admin_alerts/{alertId}": {
+      "schema": "AdminAlert",
+      "description": "Real-time system alerts and notification logs for administrators."
     }
   }
 }

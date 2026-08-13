@@ -86,6 +86,17 @@ service cloud.firestore {
         && data.createdAt is string;
     }
 
+    // Validates admin alerts
+    function isValidAdminAlert(data) {
+      return data.keys().hasAll(['id', 'type', 'title', 'message', 'createdAt', 'read'])
+        && data.id is string && data.id.size() <= 128
+        && data.type is string && data.type.size() <= 50
+        && data.title is string && data.title.size() <= 200
+        && data.message is string && data.message.size() <= 1000
+        && data.createdAt is string
+        && data.read is bool;
+    }
+
     // --- COLLECTIONS RULES ---
 
     // Admins Collection - manually provisioned, readable by signed-in users, no writes
@@ -144,6 +155,14 @@ service cloud.firestore {
                     && isValidId(lessonId) 
                     && isValidLesson(incoming());
                     
+      allow delete: if isAdmin();
+    }
+
+    // Admin Alerts Collection - Signed-in users can create registration/traffic alerts, Admins can read, update, delete
+    match /admin_alerts/{alertId} {
+      allow read: if isSignedIn();
+      allow create: if isValidAdminAlert(incoming());
+      allow update: if isValidAdminAlert(incoming());
       allow delete: if isAdmin();
     }
   }

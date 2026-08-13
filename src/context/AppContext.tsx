@@ -13,6 +13,7 @@ import {
   getDoc, 
   setDoc, 
   updateDoc, 
+  deleteDoc,
   collection, 
   onSnapshot, 
   getDocs,
@@ -21,7 +22,7 @@ import {
   orderBy
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
-import { UserProfile, UserPrivateInfo, Lesson, LeaderboardEntry, SiteVisitorLog, VisitorAnalyticsSummary } from '../types';
+import { UserProfile, UserPrivateInfo, Lesson, LeaderboardEntry, SiteVisitorLog, VisitorAnalyticsSummary, AdminAlert } from '../types';
 import { DEFAULT_LESSONS } from '../data/defaultLessons';
 
 interface AppContextType {
@@ -36,6 +37,12 @@ interface AppContextType {
   siteVisitors: SiteVisitorLog[];
   visitorStats: VisitorAnalyticsSummary;
   refreshAdminAnalytics: () => Promise<void>;
+  adminAlerts: AdminAlert[];
+  unreadAlertsCount: number;
+  markAlertAsRead: (alertId: string) => Promise<void>;
+  markAllAlertsAsRead: () => Promise<void>;
+  deleteAlert: (alertId: string) => Promise<void>;
+  triggerDAURecordCheck: (currentDAU: number) => Promise<void>;
   selectedLanguage: string;
   setSelectedLanguage: (lang: string) => void;
   theme: 'light' | 'dark';
@@ -150,7 +157,142 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     guestVisitorsCount: 1,
     activeTodayCount: 1
   });
+  const [adminAlerts, setAdminAlerts] = useState<AdminAlert[]>([]);
+  const [unreadAlertsCount, setUnreadAlertsCount] = useState<number>(0);
   const [selectedLanguage, setSelectedLanguageState] = useState<string>('marathi');
+
+  // Real-time listener for Admin Alerts from Firestore
+  useEffect(() => {
+    const alertsRef = collection(db, 'admin_alerts');
+    const unsubscribe = onSnapshot(alertsRef, (snapshot) => {
+      const alertList: AdminAlert[] = [];
+      snapshot.forEach((docSnap) => {
+        alertList.push(docSnap.data() as AdminAlert);
+      });
+      alertList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      
+      if (alertList.length === 0) {
+        // Fallback default system initialization alert
+        const demoAlert: AdminAlert = {
+          id: 'alert_system_init',
+          type: 'system',
+          title: '🔔 Real-Time Admin Alert System Active',
+          message: 'Real-time alert monitoring active. You will receive instant notifications when new users register or DAU records are broken.',
+          createdAt: new Date().toISOString(),
+          read: false
+        };
+        setAdminAlerts([demoAlert]);
+        setUnreadAlertsCount(1);
+      } else {
+        setAdminAlerts(alertList);
+        setUnreadAlertsCount(alertList.filter(a => !a.read).length);
+      }
+    }, (err) => {
+      console.warn("Real-time admin alerts snapshot listener notice:", err);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Alert Actions
+  const markAlertAsRead = async (alertId: string) => {
+    try {
+      const alertRef = doc(db, 'admin_alerts', alertId);
+      await updateDoc(alertRef, { read: true });
+    } catch (err) {
+      console.warn("Could not mark alert as read in cloud:", err);
+    }
+    setAdminAlerts(prev => prev.map(a => a.id === alertId ? { ...a, read: true } : a));
+    setUnreadAlertsCount(prev => Math.max(0, prev - 1));
+  };
+
+  const markAllAlertsAsRead = async () => {
+    try {
+      const unread = adminAlerts.filter(a => !a.read);
+      for (const a of unread) {
+        if (a.id.startsWith('alert_')) {
+          const alertRef = doc(db, 'admin_alerts', a.id);
+          await updateDoc(alertRef, { read: true }).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.warn("Could not mark all alerts read in cloud:", err);
+    }
+    setAdminAlerts(prev => prev.map(a => ({ ...a, read: true })));
+    setUnreadAlertsCount(0);
+  };
+
+  const deleteAlert = async (alertId: string) => {
+    try {
+      if (alertId.startsWith('alert_')) {
+        const alertRef = doc(db, 'admin_alerts', alertId);
+        await deleteDoc(alertRef);
+      }
+    } catch (err) {
+      console.warn("Could not delete alert in cloud:", err);
+    }
+    setAdminAlerts(prev => prev.filter(a => a.id !== alertId));
+    setUnreadAlertsCount(prev => adminAlerts.filter(a => a.id !== alertId && !a.read).length);
+  };
+
+  // Function to create registration alert
+  const createRegistrationAlert = async (email: string, username: string, uid: string) => {
+    try {
+      const alertId = `alert_reg_${uid.slice(0, 10)}_${Date.now()}`;
+      const alertRef = doc(db, 'admin_alerts', alertId);
+      const regAlert: AdminAlert = {
+        id: alertId,
+        type: 'new_user',
+        title: '🎉 New User Registered!',
+        message: `Learner "${username}" (${email || 'No Email'}) successfully registered a new account on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`,
+        createdAt: new Date().toISOString(),
+        read: false,
+        metadata: {
+          email: email || '',
+          username: username || '',
+          uid: uid || ''
+        }
+      };
+      await setDoc(alertRef, regAlert);
+    } catch (err) {
+      console.warn("Real-time registration alert notice:", err);
+    }
+  };
+
+  // Function to check and trigger DAU Record alert
+  const triggerDAURecordCheck = async (currentDAU: number) => {
+    try {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const savedMaxStr = localStorage.getItem('max_dau_record');
+      const previousMax = savedMaxStr ? parseInt(savedMaxStr, 10) : 0;
+
+      if (currentDAU > previousMax && currentDAU >= 1) {
+        localStorage.setItem('max_dau_record', String(currentDAU));
+        const alertId = `alert_dau_${todayStr}_${currentDAU}`;
+        const alertRef = doc(db, 'admin_alerts', alertId);
+        const existingSnap = await getDoc(alertRef);
+
+        if (!existingSnap.exists()) {
+          const dauAlert: AdminAlert = {
+            id: alertId,
+            type: 'dau_record',
+            title: '🚀 New Daily Active User (DAU) Record!',
+            message: `The platform hit a new high record of ${currentDAU} daily active user(s) today (${todayStr})! ${previousMax > 0 ? `Previous high record was ${previousMax}.` : 'This sets our initial baseline active user record!'}`,
+            createdAt: new Date().toISOString(),
+            read: false,
+            metadata: {
+              dauCount: currentDAU,
+              previousRecord: previousMax,
+              date: todayStr
+            }
+          };
+          await setDoc(alertRef, dauAlert);
+        }
+      }
+    } catch (err) {
+      console.warn("DAU alert trigger notice:", err);
+    }
+  };
 
   // Theme state management
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -477,13 +619,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const registeredCount = userList.filter(u => u.email && u.email.includes('@')).length;
       const guestCount = Math.max(0, visitorList.length - registeredCount);
 
+      const activeTodayFinal = Math.max(activeTodayCount, 1);
       setVisitorStats({
         totalVisits: Math.max(totalVisits, visitorList.length, 1),
         uniqueVisitors: Math.max(visitorList.length, userList.length, 1),
         registeredUsersCount: registeredCount,
         guestVisitorsCount: guestCount,
-        activeTodayCount: Math.max(activeTodayCount, 1)
+        activeTodayCount: activeTodayFinal
       });
+
+      // Check if current DAU hits a new daily active user record milestone
+      triggerDAURecordCheck(activeTodayFinal);
     } catch (err) {
       console.warn("Analytics refresh notice:", err);
     }
@@ -667,6 +813,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               console.warn("Could not write profile to cloud, saving locally:", err);
             }
             currentProfileData = newProfile;
+            
+            // Trigger Admin Real-Time Alert for new user registration
+            createRegistrationAlert(currentUser.email || '', newProfile.username, currentUser.uid);
             
             // Create private info
             const newPrivate: UserPrivateInfo = {
@@ -1020,6 +1169,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const res = await createUserWithEmailAndPassword(auth, email, pass);
       if (res.user) {
         await updateProfile(res.user, { displayName });
+        createRegistrationAlert(cleanEmail, displayName, res.user.uid);
       }
       if (isSuperAdmin) {
         setIsAdmin(true);
@@ -1055,6 +1205,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setProfile(userProfile);
       setSelectedLanguageState(lang);
       localStorage.setItem('offline_user_profile', JSON.stringify(userProfile));
+
+      // Trigger real-time alert for admin
+      createRegistrationAlert(cleanEmail, userProfile.username, uid);
     }
   };
 
@@ -1276,6 +1429,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       siteVisitors,
       visitorStats,
       refreshAdminAnalytics,
+      adminAlerts,
+      unreadAlertsCount,
+      markAlertAsRead,
+      markAllAlertsAsRead,
+      deleteAlert,
+      triggerDAURecordCheck,
       selectedLanguage,
       setSelectedLanguage,
       theme,
